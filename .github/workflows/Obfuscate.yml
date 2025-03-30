@@ -21,37 +21,41 @@ jobs:
           persist-credentials: true
           fetch-depth: 0
 
-      - name: Setup Node.js
+      - name: Setup Node.js (No Cache)
         uses: actions/setup-node@v4
         with:
           node-version: "20.x"
-          cache: "npm"
+          cache: 'false'  # 明确禁用缓存
 
-      - name: Install and process
-        run: |-
-          npm install -g javascript-obfuscator@4.0.2
-          curl -sSfo origin.js \
+      - name: Install Global Deps
+        run: |
+          npm install -g javascript-obfuscator@4.0.2 \
+            --no-package-lock --no-audit --prefer-offline
+
+      - name: Fetch and process
+        run: |
+          curl -sSf -o origin.js \
             "https://raw.githubusercontent.com/bia-pain-bache/BPB-Worker-Panel/main/build/unobfuscated-worker.js" \
             --retry 3
           sed -i '
             s/window\./globalThis./g;
             s/document\./null?./g;
             /localStorage/d;
-            s/console\.log/\/\/ &/g;
-            s/addEventListener("fetch"/const WHITELIST={UA:[/Whoer/,/Bot/],IPS:["91.212.45.0/24"]};const mock=request=>new Response(JSON.stringify({ip:request.headers.get("cf-connecting-ip"),country:"US"}),{headers:{"Content-Type":"application/json","Accept-CH":"Sec-CH-UA"}});function isIPInRange(ip,cidr){const [r,m]=cidr.split("/");const n=ip.split(".").reduce((a,o)=>(a<<8)+parseInt(o),0),t=r.split(".").reduce((a,o)=>(a<<8)+parseInt(o),0);return(n&~((1<<(32-m))-1))===(t&~((1<<(32-m))-1))}if(WHITELIST.UA.some(p=>p.test(request.headers.get("user-agent")))||WHITELIST.IPS.some(i=>isIPInRange(request.headers.get("cf-connecting-ip"),i)))return mock(request);&/
           ' origin.js
 
       - name: Build worker
-        run: |-
-          javascript-obfuscator origin.js --output _worker.js \
-            --compact --rename-globals false \
-            --reserved-names 'fetch,Response,Request,addEventListener,WHITELIST' \
-            --control-flow-flattening false
+        run: |
+          javascript-obfuscator origin.js \
+            --output _worker.js \
+            --compact \
+            --identifier-names-generator hexadecimal \
+            --rename-globals false \
+            --reserved-names "fetch,Response,Request"
 
-      - name: Deploy
-        run: |-
+      - name: Force Push
+        run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -f _worker.js
-          git commit -m "🚀 Auto-deploy $(date +'%Y-%m-%dT%H:%M:%S')" --allow-empty
-          git push origin main -f https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}
+          git commit -m "🚀 Built at $(date +'%Y%m%d%H%M%S')" --allow-empty
+          git push origin main -f
