@@ -12,7 +12,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 5
 
     steps:
       - name: Checkout code
@@ -21,41 +21,46 @@ jobs:
           persist-credentials: true
           fetch-depth: 0
 
-      - name: Setup Node.js (No Cache)
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20.x"
-          cache: 'false'  # 明确禁用缓存
+          node-version: "20.x"  # 已移除cache参数解决错误
 
-      - name: Install Global Deps
+      - name: Install dependencies
         run: |
           npm install -g javascript-obfuscator@4.0.2 \
-            --no-package-lock --no-audit --prefer-offline
+            --no-package-lock \
+            --no-audit \
+            --global-style \
+            --omit=optional
 
       - name: Fetch and process
         run: |
           curl -sSf -o origin.js \
             "https://raw.githubusercontent.com/bia-pain-bache/BPB-Worker-Panel/main/build/unobfuscated-worker.js" \
             --retry 3
+          
+          # 环境兼容处理
           sed -i '
             s/window\./globalThis./g;
             s/document\./null?./g;
             /localStorage/d;
           ' origin.js
 
-      - name: Build worker
+      - name: Obfuscate code
         run: |
           javascript-obfuscator origin.js \
             --output _worker.js \
-            --compact \
+            --compact true \
             --identifier-names-generator hexadecimal \
             --rename-globals false \
-            --reserved-names "fetch,Response,Request"
+            --reserved-names "fetch,Response,Request,addEventListener,caches"
 
-      - name: Force Push
+      - name: Commit and push
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -f _worker.js
-          git commit -m "🚀 Built at $(date +'%Y%m%d%H%M%S')" --allow-empty
+          TIMESTAMP=$(date +"%Y%m%d-%H%M%S")
+          git commit -m "🔨 Built at ${TIMESTAMP}" --allow-empty
           git push origin main -f
